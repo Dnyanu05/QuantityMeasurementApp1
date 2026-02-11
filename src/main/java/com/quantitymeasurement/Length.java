@@ -1,10 +1,11 @@
 package com.quantitymeasurement;
 
 /**
- * UC3/UC4/UC5: Generic, immutable length with a numeric value and a unit.
+ * UC3/UC4/UC5/UC6: Generic, immutable length with a numeric value and a unit.
  * - Stores length as (value, unit)
  * - Uses INCH as the base unit for normalization (via LengthUnit helpers)
  * - Provides conversion, tolerant equality, and safe construction
+ * - UC6: Adds addition of two Length values (across units), result in the unit of the first operand
  */
 public final class Length {
 
@@ -73,6 +74,39 @@ public final class Length {
     public boolean sameAs(Length other) {
         if (other == null) return false;
         return Math.abs(this.toBaseInches() - other.toBaseInches()) < EPS;
+    }
+
+    // ======================
+    // UC6: Addition feature
+    // ======================
+
+    /**
+     * Adds this Length with the given Length.
+     * Rule: result is returned in the unit of the *first operand* (this.unit).
+     *
+     * Steps:
+     * 1) Convert both operands to base inches
+     * 2) Add in inches
+     * 3) Convert the sum back to this.unit
+     * 4) Return a NEW immutable Length
+     *
+     * @param other the second operand (must not be null; its unit must not be null)
+     * @return new Length representing the sum, expressed in this.unit
+     * @throws IllegalArgumentException if other is null or has null unit
+     */
+    public Length add(Length other) {
+        if (other == null || other.unit == null) {
+            throw new IllegalArgumentException("Second operand (Length) must not be null and must have a unit");
+        }
+
+        // 1) Convert both to base (inches)
+        double sumInches = this.toBaseInches() + other.toBaseInches();
+
+        // 2) Convert back to unit of the first operand
+        double resultValueInThisUnit = this.unit.fromBaseInches(sumInches);
+
+        // 3) Return a new Length
+        return new Length(resultValueInThisUnit, this.unit);
     }
 
     /**
