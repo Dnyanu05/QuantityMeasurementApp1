@@ -1,12 +1,15 @@
 package com.quantitymeasurement;
 
 /**
- * UC3/UC4/UC5/UC6/UC7: Generic, immutable length with a numeric value and a unit.
- * - Stores length as (value, unit)
- * - Uses INCH as the base unit for normalization (via LengthUnit helpers)
- * - Provides conversion, tolerant equality, and safe construction
- * - UC6: Adds addition of two Length values (across units), result in the unit of the first operand
- * - UC7: Adds addition with an explicit target unit (caller chooses result unit)
+ * UC3/UC4/UC5/UC6/UC7/UC8: Immutable Length with numeric value + unit.
+ * - Base normalization uses INCH/INCHES via the standalone LengthUnit enum.
+ * - All conversion math is delegated to LengthUnit (UC8 refactor).
+ * - Exception types are aligned with existing UC1–UC7 test expectations:
+ *      * Constructor: null unit → NullPointerException
+ *      * add(null): IllegalArgumentException
+ *      * add(x) with x.unit == null → NullPointerException
+ *      * add(x, target=null) → IllegalArgumentException
+ *      * Invalid numeric (NaN/∞) → IllegalArgumentException
  */
 public final class Length {
 
@@ -17,11 +20,13 @@ public final class Length {
     private final LengthUnit unit;
 
     public Length(double value, LengthUnit unit) {
+        // Backward compatibility with older tests: expect NPE when unit is null
         if (unit == null) {
-            throw new NullPointerException("unit must not be null");
+            throw new NullPointerException("Unit must not be null");
         }
+        // UC8: reject invalid numeric values
         if (Double.isNaN(value) || Double.isInfinite(value)) {
-            throw new IllegalArgumentException("value must be a finite number");
+            throw new IllegalArgumentException("Value must be a finite number");
         }
         this.value = value;
         this.unit = unit;
@@ -32,14 +37,15 @@ public final class Length {
 
     /** Convert this Length to the target unit and return a NEW Length. */
     public Length convertTo(LengthUnit to) {
-        if (to == null) throw new IllegalArgumentException("target unit must not be null");
-        if (this.unit == to) return this;
+        // Keep IAE for null target (older suites typically use IAE here)
+        if (to == null) throw new IllegalArgumentException("Target unit must not be null");
+        if (this.unit == to) return this; // small optimization
         double baseInches = toBaseInches();
         double targetValue = to.fromBaseInches(baseInches);
         return new Length(targetValue, to);
     }
 
-    /** Convert this Length to base inches (helper). */
+    /** Convert this Length to base inches (helper). Package-private for tests. */
     double toBaseInches() {
         return unit.toBaseInches(value);
     }
@@ -52,8 +58,13 @@ public final class Length {
 
     // UC6: Addition – result in this.unit
     public Length add(Length other) {
-        if (other == null || other.unit == null) {
-            throw new IllegalArgumentException("Second operand (Length) must not be null and must have a unit");
+        // Your UC6 test expects IllegalArgumentException when second operand is null
+        if (other == null) {
+            throw new IllegalArgumentException("Second operand (Length) must not be null");
+        }
+        // Older tests expect NPE when inner unit is null
+        if (other.unit == null) {
+            throw new NullPointerException("Second operand must have a unit");
         }
         double sumInches = this.toBaseInches() + other.toBaseInches();
         double resultValueInThisUnit = this.unit.fromBaseInches(sumInches);
@@ -62,9 +73,15 @@ public final class Length {
 
     // UC7: Addition with explicit target unit
     public Length add(Length other, LengthUnit targetUnit) {
-        if (other == null || other.unit == null) {
-            throw new IllegalArgumentException("Second operand (Length) must not be null and must have a unit");
+        // Keep consistent with UC6: IAE for null other
+        if (other == null) {
+            throw new IllegalArgumentException("Second operand (Length) must not be null");
         }
+        // NPE for missing unit inside 'other'
+        if (other.unit == null) {
+            throw new NullPointerException("Second operand must have a unit");
+        }
+        // IAE for null target unit (typical expectation)
         if (targetUnit == null) {
             throw new IllegalArgumentException("Target unit must not be null");
         }
@@ -83,6 +100,7 @@ public final class Length {
 
     @Override
     public int hashCode() {
+        // Hash on normalized base inches (rounded to match equals tolerance)
         double base = toBaseInches();
         long rounded = Math.round(base * 1_000_000d); // 1e-6 precision
         return Long.hashCode(rounded);
